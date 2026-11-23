@@ -9,17 +9,32 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMPOSER_ALLOW_SUPERUSER=1
 
 # Sistema base + JDK 17
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      openjdk-17-jdk-headless \
-      curl unzip zip git ca-certificates rsync \
-      software-properties-common \
+RUN apt-get update \
+    && ok=; for i in 1 2 3 4 5; do \
+         apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
+           openjdk-17-jdk-headless \
+           curl unzip zip git ca-certificates rsync \
+           software-properties-common \
+         && { ok=1; break; }; \
+         echo "apt-get intento $i/5 fallido - reintentando en 20s"; \
+         sleep 20; apt-get update; \
+       done; \
+       [ -n "$ok" ] \
     && rm -rf /var/lib/apt/lists/*
 
 # PHP 8.4 CLI + extensiones que piden composer.json y native:install (ext-zip)
+# El PPA de ondrej a veces responde 503 bajo carga: reintentos con pausa.
 RUN add-apt-repository -y ppa:ondrej/php \
-    && apt-get update && apt-get install -y --no-install-recommends \
-      php8.4-cli php8.4-zip php8.4-mbstring php8.4-xml php8.4-curl \
-      php8.4-sqlite3 php8.4-intl php8.4-bcmath \
+    && apt-get update \
+    && ok=; for i in 1 2 3 4 5; do \
+         apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
+           php8.4-cli php8.4-zip php8.4-mbstring php8.4-xml php8.4-curl \
+           php8.4-sqlite3 php8.4-intl php8.4-bcmath \
+         && { ok=1; break; }; \
+         echo "apt-get intento $i/5 fallido - reintentando en 20s"; \
+         sleep 20; apt-get update; \
+       done; \
+       [ -n "$ok" ] \
     && rm -rf /var/lib/apt/lists/*
 
 # Composer
@@ -28,7 +43,13 @@ RUN curl -sS https://getcomposer.org/installer \
 
 # Node 22 (por si el build invoca herramientas JS)
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+    && ok=; for i in 1 2 3 4 5; do \
+         apt-get install -y --no-install-recommends -o Acquire::Retries=5 nodejs \
+         && { ok=1; break; }; \
+         echo "apt-get intento $i/5 fallido - reintentando en 20s"; \
+         sleep 20; apt-get update; \
+       done; \
+       [ -n "$ok" ] \
     && rm -rf /var/lib/apt/lists/*
 
 # Android command line tools
