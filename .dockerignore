@@ -1,0 +1,9 @@
+.git
+vendor
+node_modules
+storage/app/spike
+storage/logs
+native-builds
+.dockerignore
+docker
+.phpunit.result.cache

@@ -1,0 +1,95 @@
+name: Release
+
+# Tag-driven APK releases: `git tag v0.1.0 && git push --tags` builds the
+# signed APK with the same Docker toolchain used locally and attaches it
+# to a GitHub release. Requires repo secrets:
+#   ANDROID_KEYSTORE   - base64 of the release .keystore file
+#   KEYSTORE_PASSWORD  - storepass
+#   KEY_ALIAS          - key alias inside the keystore
+#   KEY_PASSWORD       - keypass
+# The same keystore must be kept for every release or Android refuses
+# upgrades over already-installed builds.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Pest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+
+      - name: Test
+        run: vendor/bin/pest --compact
+
+  apk:
+    name: build + sign + publish APK
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      APP_ID: com.alberto.pixellightdream
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decode signing keystore
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          mkdir -p /tmp/airphp-keys
+          echo "$ANDROID_KEYSTORE" | base64 -d > /tmp/airphp-keys/airphp.keystore
+
+      - name: Build toolchain image
+        run: docker build -t airphp-android docker/android
+
+      - name: Package signed APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          VER=${TAG#v}
+          IFS=. read -r MAJ MIN PAT <<< "$VER"
+          CODE=$(( ${MAJ:-0} * 10000 + ${MIN:-0} * 100 + ${PAT:-0} ))
+          echo "Version: $VER  versionCode: $CODE"
+          mkdir -p dist
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src:ro" \
+            -v /tmp/airphp-keys:/keys \
+            -v "$GITHUB_WORKSPACE/dist:/out" \
+            -e APP_ID -e APP_VERSION="$VER" -e APP_VERSION_CODE="$CODE" \
+            -e KEYSTORE_PASSWORD -e KEY_ALIAS -e KEY_PASSWORD \
+            airphp-android bash /src/docker/android/package.sh
+
+      - name: Rename + checksums
+        run: |
+          cd dist
+          APK=$(ls *.apk | head -1)
+          mv "$APK" "airphp-${GITHUB_REF_NAME}.apk"
+          sha256sum "airphp-${GITHUB_REF_NAME}.apk" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
