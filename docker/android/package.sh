@@ -22,9 +22,6 @@ tar -C /src -c --exclude='./native-builds' --exclude='./storage/app/spike' \
     --exclude='./docker' -f - . | tar -xf - -C "$WORK"
 cd "$WORK"
 
-# local.properties con el sdk.dir real (el template lo trae vacío)
-echo "sdk.dir=$ANDROID_HOME" > nativephp/android/local.properties
-
 echo "==> composer install"
 composer install --no-interaction --prefer-dist --optimize-autoloader
 
@@ -52,6 +49,11 @@ fi
 
 echo "==> native:install android"
 php artisan native:install android --no-interaction
+
+# local.properties con el sdk.dir real (el template lo trae vacío).
+# Va DESPUÉS de native:install: en CI el directorio nativephp/android aún
+# no existe en el checkout (se genera aquí).
+echo "sdk.dir=$ANDROID_HOME" > nativephp/android/local.properties
 
 # MANAGE_EXTERNAL_STORAGE permite escribir en /storage/emulated/0/AirPHP
 # (carpeta visible). El usuario concede "Acceso a todos los archivos" en
