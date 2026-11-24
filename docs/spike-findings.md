@@ -51,3 +51,30 @@ socket survives a minute in background. The Kotlin plugin fallback (Plan B) is
 discarded. What's still open for the real MVP: per-upload on-device
 confirmation, upload size limits, an identity-proving liveness probe, and a
 foreground service if background serving is ever promised.
+
+## Round 2 — capability probes, 2026-11-24 (`app-release.apk` 79.7 MB)
+
+Round 1 proved the server can exist. Round 2 proved what the product around it
+can do — every capability probed on the same POCO M5:
+
+| Capability | Result | How |
+|---|---|---|
+| Disk stats | ✅ | `disk_free_space` / `disk_total_space` on `/storage/emulated/0` — real values (30.3 GB free / 107 GB) |
+| UDP discovery | ✅ | Broadcast **both ways**: beacon `AirPHP:IP:port` sent to `255.255.255.255` + subnet broadcast was received on the laptop; the listener also received broadcast datagrams from outside. AirDrop-style LAN discovery in pure PHP, no plugins |
+| On-device QR | ✅ | `bacon/bacon-qr-code` `Encoder::encode() → getMatrix()` → rendered as a 25×25 grid of native UI elements. No images, no gd — Compose draws the QR |
+| Share sheet | ✅ | `nativephp/mobile-share` (official, free) — `Share::url` / `Share::file` |
+| Clipboard | ✅ | `nativephp/mobile-clipboard` (official) — writeText/readText roundtrip verified |
+| File picker | ✅ | `smronju/nativephp-document-picker` — SAF `ACTION_OPEN_DOCUMENT`, any file type, copies to `cache/picked-documents/` and fires `DocumentPicked{path,name}` with a readable path |
+
+### Round-2 findings
+
+| ID | Finding |
+|---|---|
+| H10 | **`native:package` strips `vendor/endroid/*` from the bundle** — the package exists only for `native:jump`'s terminal QR. The autoloader knows the class (`ClassLoader.php` resolves it), the file isn't on the phone: instantiating `QrCode` dies with a PHP stream error, not a clean "class not found". `endroid/qr-code` cannot run on-device, period |
+| H11 | **Facades without Kotlin handlers fail silently.** Core ships PHP facades (`Share::url`, `Camera::pickImages`) whose calls dispatch (`nativephp_call` exists, no exception) and vanish — the compiled bridge registers ~20 handlers (AsyncTask, Event, Device, Dialog, File, UI, Perf) and Share/Camera.PickMedia aren't among them. The handlers arrive in separate official plugins. **"The facade exists" ≠ "it works"** — every native facade now gets a device probe before entering a design |
+| H12 | **`stream_socket_client` to a broadcast address dies with `EACCES` on Android** — `connect()` requires `SO_BROADCAST` set first. Working form: `stream_socket_server('udp://0.0.0.0:0', STREAM_SERVER_BIND)` + `socket_import_stream` + `socket_set_option(SO_BROADCAST)` + `stream_socket_sendto`. Windows doesn't enforce this — testing from a laptop gives a false positive |
+| H13 | Third-party plugins are the ecosystem's real shape: the missing Kotlin handlers are deliberately split into small per-capability plugins, official and community alike. Budget for auditing them (R6-style) — a facade you can't see inside is one install away from working or from silently not |
+
+Every capability the product mock promised now has a verified path on-device.
+What's deliberately undecided stays undecided — this doc records what works,
+not what ships.
