@@ -4,7 +4,11 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Native\Mobile\Providers\BrowserServiceProvider;
+use Native\Mobile\Providers\ShareServiceProvider;
 use Native\Mobile\UI\NativeUIServiceProvider;
+use NativePHP\Clipboard\ClipboardServiceProvider;
+use Smronju\NativephpDocumentPicker\DocumentPickerServiceProvider;
+use Vipertecpro\PhotoKit\PhotoKitServiceProvider;
 
 class NativeServiceProvider extends ServiceProvider
 {
@@ -38,8 +42,11 @@ class NativeServiceProvider extends ServiceProvider
         return [
             NativeUIServiceProvider::class,
             BrowserServiceProvider::class,
-            \Vipertecpro\PhotoKit\PhotoKitServiceProvider::class,
-        
+            PhotoKitServiceProvider::class,
+            ShareServiceProvider::class,
+            ClipboardServiceProvider::class,
+            DocumentPickerServiceProvider::class,
+
         ];
     }
 }

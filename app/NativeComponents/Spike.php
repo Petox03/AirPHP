@@ -3,11 +3,20 @@
 namespace App\NativeComponents;
 
 use App\Spike\LanServerTask;
+use App\Spike\SqliteWriteTask;
+use App\Spike\UdpListenTask;
+use BaconQrCode\Common\ErrorCorrectionLevel;
+use BaconQrCode\Encoder\Encoder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\View\View;
 use Native\Mobile\Attributes\On;
 use Native\Mobile\Attributes\Poll;
 use Native\Mobile\Edge\NativeComponent;
+use Native\Mobile\Facades\Share;
+use NativePHP\Clipboard\Facades\Clipboard;
+use Smronju\NativephpDocumentPicker\Events\DocumentPicked;
+use Smronju\NativephpDocumentPicker\Facades\DocumentPicker;
 use Vipertecpro\PhotoKit\Events\PhotoSaved;
 use Vipertecpro\PhotoKit\Events\PhotoSaveFailed;
 use Vipertecpro\PhotoKit\Facades\PhotoKit;
@@ -29,6 +38,15 @@ class Spike extends NativeComponent
     public string $uploadPath = '';
 
     public bool $showSensitive = true;
+
+    public string $testRows = '100';
+
+    public string $testSleepMs = '0';
+
+    public string $qrPath = '';
+
+    /** @var array<array<int>> */
+    public array $qrMatrix = [];
 
     public function mount(): void
     {
@@ -76,6 +94,281 @@ class Spike extends NativeComponent
     public function toggleSensitive(): void
     {
         $this->showSensitive = ! $this->showSensitive;
+    }
+
+    /**
+     * Prueba temporal pre-Fase 1: dos procesos (lane UI + AsyncTask) escriben
+     * la misma SQLite en paralelo. Responde: ¿journal_mode/WAL disponible en
+     * el runtime embebido? ¿"database is locked" con escritores concurrentes?
+     */
+    public function sqliteTest(): void
+    {
+        try {
+            $before = (string) (DB::selectOne('PRAGMA journal_mode')->journal_mode ?? '?');
+            DB::statement('PRAGMA journal_mode=WAL');
+            $after = (string) (DB::selectOne('PRAGMA journal_mode')->journal_mode ?? '?');
+            $busy = (string) (DB::selectOne('PRAGMA busy_timeout')->busy_timeout ?? '?');
+            $sync = (string) (DB::selectOne('PRAGMA synchronous')->synchronous ?? '?');
+            $this->logLine("sqlite: journal_mode {$before} -> {$after} (WAL attempt) | busy_timeout={$busy} synchronous={$sync}");
+        } catch (\Throwable $e) {
+            $this->logLine('sqlite pragma failed: '.$e->getMessage());
+
+            return;
+        }
+
+        DB::statement('DROP TABLE IF EXISTS spike_sqlite_test');
+        DB::statement('CREATE TABLE spike_sqlite_test (id INTEGER PRIMARY KEY AUTOINCREMENT, lane TEXT, seq INTEGER, written_at REAL)');
+
+        $rows = max(1, min(5000, (int) $this->testRows));
+        $sleepUs = max(0, min(1000, (int) $this->testSleepMs)) * 1000;
+        $this->logLine("sqlite test: {$rows} rows x {$this->testSleepMs}ms per lane");
+
+        SqliteWriteTask::dispatch($this->dir(), $rows, $sleepUs)
+            ->timeout(30 + (int) ($rows * $sleepUs / 1_000_000))
+            ->finished(fn () => $this->sqliteSummary())
+            ->failed(fn (\Throwable $e) => $this->logLine('sqlite task failed: '.$e->getMessage()));
+
+        $written = 0;
+        $errors = 0;
+        for ($i = 1; $i <= $rows; $i++) {
+            try {
+                DB::table('spike_sqlite_test')->insert([
+                    'lane' => 'ui',
+                    'seq' => $i,
+                    'written_at' => microtime(true),
+                ]);
+                $written++;
+            } catch (\Throwable $e) {
+                $errors++;
+                if ($errors === 1) {
+                    $this->logLine('ui first write error: '.$e->getMessage());
+                }
+            }
+            if ($sleepUs > 0) {
+                usleep($sleepUs);
+            }
+        }
+
+        $this->logLine("ui lane done: {$written}/{$rows} written, {$errors} errors");
+    }
+
+    /**
+     * Limpieza de la instrumentación: tabla de prueba, archivos IPC/log del
+     * spike y todo lo subido durante las pruebas (carpeta de uploads activa).
+     */
+    public function cleanTestData(): void
+    {
+        try {
+            DB::statement('DROP TABLE IF EXISTS spike_sqlite_test');
+            DB::statement('PRAGMA wal_checkpoint(TRUNCATE)');
+            $this->logLine('clean: spike_sqlite_test dropped, wal checkpointed');
+        } catch (\Throwable $e) {
+            $this->logLine('clean db failed: '.$e->getMessage());
+        }
+
+        foreach (File::files($this->dir()) as $file) {
+            @unlink($file->getPathname());
+        }
+        $this->logLine('clean: spike dir wiped');
+
+        $uploads = $this->uploadsDir();
+        $removed = 0;
+        foreach (File::files($uploads) as $file) {
+            if (@unlink($file->getPathname())) {
+                $removed++;
+            }
+        }
+        $this->logLine("clean: {$removed} file(s) removed from {$uploads}");
+    }
+
+    /**
+     * Probes pre-Fase 1 (temporales): verifican en dispositivo lo que el mock
+     * de Lovable promete — almacenamiento, QR, UDP broadcast, media picker
+     * y share-sheet como workaround del clipboard ausente en core.
+     */
+    public function probeStorage(): void
+    {
+        foreach (['/storage/emulated/0', '/storage/emulated/0/Download', $this->uploadPath, storage_path()] as $p) {
+            $free = @disk_free_space($p);
+            $total = @disk_total_space($p);
+            $this->logLine(sprintf(
+                'storage %s: %s free / %s total',
+                $p,
+                $free === false ? '?' : self::humanBytes((int) $free),
+                $total === false ? '?' : self::humanBytes((int) $total),
+            ));
+        }
+    }
+
+    public function probeQr(): void
+    {
+        $url = $this->address !== '' ? $this->address : 'http://127.0.0.1';
+
+        // endroid/qr-code queda excluido del bundle (native:package recorta
+        // vendor/endroid/*); bacon es PHP puro y sí llega al dispositivo.
+        // La matriz 0/1 se dibuja como grid de columnas — cero imágenes.
+        try {
+            $matrix = Encoder::encode($url, ErrorCorrectionLevel::L())->getMatrix();
+            $w = $matrix->getWidth();
+            $h = $matrix->getHeight();
+            $rows = [];
+            for ($r = 0; $r < $h; $r++) {
+                for ($c = 0; $c < $w; $c++) {
+                    $rows[$r][] = $matrix->get($c, $r);
+                }
+            }
+            $this->qrMatrix = $rows;
+            $this->logLine("qr matrix: {$w}x{$h} modules — grid render");
+        } catch (\Throwable $e) {
+            $this->logLine('qr matrix failed: '.$this->errAt($e));
+        }
+    }
+
+    private function errAt(\Throwable $e): string
+    {
+        return $e->getMessage().' @ '.basename($e->getFile()).':'.$e->getLine();
+    }
+
+    public function probeUdpSend(): void
+    {
+        $beacon = 'AirPHP:'.self::lanIp().':'.$this->port();
+        $this->logLine('sockets_ext='.(function_exists('socket_import_stream') ? 'yes' : 'no'));
+
+        // Unicast a la laptop = control; broadcast = lo que el discovery necesita.
+        // sendto() en socket bound evita el connect() que exigía SO_BROADCAST prematuro.
+        foreach (['192.168.1.70' => 'unicast-laptop', '192.168.1.255' => 'bcast-subnet', '255.255.255.255' => 'bcast-all'] as $target => $label) {
+            $result = self::udpSendTo($beacon, $target, 9998);
+            $this->logLine("udp {$label} ({$target}): {$result}");
+        }
+    }
+
+    private static function udpSendTo(string $payload, string $ip, int $port): string
+    {
+        $sock = @stream_socket_server('udp://0.0.0.0:0', $errno, $errstr, STREAM_SERVER_BIND);
+
+        if ($sock === false) {
+            return "bind-fail({$errstr})";
+        }
+
+        if (function_exists('socket_import_stream')) {
+            $s = @socket_import_stream($sock);
+            if ($s) {
+                @socket_set_option($s, SOL_SOCKET, SO_BROADCAST, 1);
+            }
+        }
+
+        error_clear_last();
+        $n = @stream_socket_sendto($sock, $payload, 0, "{$ip}:{$port}");
+        $err = $n === false ? (error_get_last()['message'] ?? '?') : '';
+        fclose($sock);
+
+        return $n === false ? "sendto-fail({$err})" : "sent {$n}B";
+    }
+
+    public function probeUdpListen(): void
+    {
+        UdpListenTask::dispatch($this->dir())
+            ->timeout(75)
+            ->finished(fn () => $this->logLine('udp listener finished'))
+            ->failed(fn (\Throwable $e) => $this->logLine('udp listener failed: '.$e->getMessage()));
+
+        $this->logLine('udp listener started (:9999, ~60s)');
+    }
+
+    public function probePicker(): void
+    {
+        try {
+            DocumentPicker::pick();
+            $this->logLine('document picker dispatched (any type)');
+        } catch (\Throwable $e) {
+            $this->logLine('picker threw: '.$e->getMessage());
+        }
+    }
+
+    #[On(DocumentPicked::class)]
+    public function onDocumentPicked(?string $path = null, ?string $name = null): void
+    {
+        if ($path === null) {
+            $this->logLine('picker cancelled or failed (path=null)');
+
+            return;
+        }
+
+        $this->logLine('picked: '.$path.' ('.$name.') '
+            .(is_file($path) ? self::humanBytes((int) filesize($path)).' readable' : '[NOT readable]'));
+    }
+
+    public function probeClipboard(): void
+    {
+        try {
+            $ok = Clipboard::writeText('AirPHP '.date('H:i:s'));
+            $back = Clipboard::readText();
+            $this->logLine('clipboard write='.($ok ? 'ok' : 'fail')." read='{$back}'");
+        } catch (\Throwable $e) {
+            $this->logLine('clipboard threw: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * El log completo al portapapeles — para pegarlo donde sea sin andar
+     * seleccionando texto en pantalla.
+     */
+    public function copyLog(): void
+    {
+        $log = (string) @file_get_contents($this->dir().'/server.log');
+
+        if ($log === '') {
+            $this->logLine('nothing to copy (log empty)');
+
+            return;
+        }
+
+        try {
+            $this->logLine('copy log: '.(Clipboard::writeText($log) ? 'copied' : 'write failed'));
+        } catch (\Throwable $e) {
+            $this->logLine('copy log threw: '.$e->getMessage());
+        }
+    }
+
+    public function probeShare(): void
+    {
+        $this->logLine('share: nativephp_call='.(function_exists('nativephp_call') ? 'yes' : 'NO'));
+
+        try {
+            Share::url('AirPHP server', 'Server running at '.$this->address, $this->address);
+            $this->logLine('share dispatched');
+        } catch (\Throwable $e) {
+            $this->logLine('share threw: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Copia el log a la carpeta pública de uploads para abrirlo/compartirlo
+     * desde el gestor de archivos. Además GET /log ya lo expone por HTTP.
+     */
+    public function exportLog(): void
+    {
+        $dest = $this->uploadsDir().'/airphp-log-'.date('Ymd-His').'.txt';
+
+        if (@copy($this->dir().'/server.log', $dest)) {
+            $this->logLine('log exported: '.$dest);
+        } else {
+            $this->logLine('log export failed');
+        }
+    }
+
+    private function sqliteSummary(): void
+    {
+        try {
+            $counts = DB::table('spike_sqlite_test')
+                ->selectRaw('lane, COUNT(*) as c')
+                ->groupBy('lane')
+                ->pluck('c', 'lane')
+                ->all();
+            $this->logLine('sqlite totals: '.json_encode($counts));
+        } catch (\Throwable $e) {
+            $this->logLine('sqlite summary failed: '.$e->getMessage());
+        }
     }
 
     #[Poll(1000)]

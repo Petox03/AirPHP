@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e773eb26ec64b5c59ab85407ff37c0d9",
+    "content-hash": "ad097b72f11b8fb296859907cb804545",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -2805,6 +2805,116 @@
             "time": "2026-10-22T19:51:21+00:00"
         },
         {
+            "name": "nativephp/mobile-clipboard",
+            "version": "1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/NativePHP/mobile-clipboard.git",
+                "reference": "42915220750b02ff555ca20b11e656f31d015536"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/NativePHP/mobile-clipboard/zipball/42915220750b02ff555ca20b11e656f31d015536",
+                "reference": "42915220750b02ff555ca20b11e656f31d015536",
+                "shasum": ""
+            },
+            "require": {
+                "nativephp/mobile": "^3.0 || ^4.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "orchestra/testbench": "^10.0",
+                "pestphp/pest": "^2.7|^3.0|^4.0"
+            },
+            "type": "nativephp-plugin",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "NativePHP\\Clipboard\\ClipboardServiceProvider"
+                    ]
+                },
+                "nativephp": {
+                    "manifest": "nativephp.json"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "NativePHP\\Clipboard\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "NativePHP",
+                    "email": "support@nativephp.com"
+                }
+            ],
+            "description": "System clipboard access (copy/paste text) for NativePHP Mobile",
+            "support": {
+                "issues": "https://github.com/NativePHP/mobile-clipboard/issues",
+                "source": "https://github.com/NativePHP/mobile-clipboard/tree/1.0.0"
+            },
+            "time": "2026-07-19T02:38:14+00:00"
+        },
+        {
+            "name": "nativephp/mobile-share",
+            "version": "1.1.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/NativePHP/mobile-share.git",
+                "reference": "cc30896ae0751e181c07ce290c05ac37253ae11b"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/NativePHP/mobile-share/zipball/cc30896ae0751e181c07ce290c05ac37253ae11b",
+                "reference": "cc30896ae0751e181c07ce290c05ac37253ae11b",
+                "shasum": ""
+            },
+            "require": {
+                "nativephp/mobile": "^3.0 || ^4.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "orchestra/testbench": "^10.0",
+                "pestphp/pest": "^2.7|^3.0|^4.0"
+            },
+            "type": "nativephp-plugin",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Native\\Mobile\\Providers\\ShareServiceProvider"
+                    ]
+                },
+                "nativephp": {
+                    "manifest": "nativephp.json"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Native\\Mobile\\Providers\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "NativePHP",
+                    "email": "support@nativephp.com"
+                }
+            ],
+            "description": "Native share sheet plugin for NativePHP Mobile",
+            "support": {
+                "issues": "https://github.com/NativePHP/mobile-share/issues",
+                "source": "https://github.com/NativePHP/mobile-share/tree/1.1.1"
+            },
+            "time": "2026-11-04T12:56:41+00:00"
+        },
+        {
             "name": "nativephp/mobile-ui",
             "version": "0.6.0",
             "source": {
@@ -4366,6 +4476,68 @@
                 }
             ],
             "time": "2025-08-19T18:57:03+00:00"
+        },
+        {
+            "name": "smronju/nativephp-document-picker",
+            "version": "1.1.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/smronju/nativephp-document-picker.git",
+                "reference": "2bc98cc8affc4c7920b81f5ce75cf7353df3b95a"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/smronju/nativephp-document-picker/zipball/2bc98cc8affc4c7920b81f5ce75cf7353df3b95a",
+                "reference": "2bc98cc8affc4c7920b81f5ce75cf7353df3b95a",
+                "shasum": ""
+            },
+            "require": {
+                "nativephp/mobile": "^3.0|^4.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "pestphp/pest": "^3.0|^4.0|^5.0"
+            },
+            "type": "nativephp-plugin",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Smronju\\NativephpDocumentPicker\\DocumentPickerServiceProvider"
+                    ]
+                },
+                "nativephp": {
+                    "manifest": "nativephp.json"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Smronju\\NativephpDocumentPicker\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Mohammad Shoriful Islam Ronju",
+                    "email": "smronju@gmail.com"
+                }
+            ],
+            "description": "Presents the system document picker in a NativePHP Mobile app — to open a foreign file, and to save one back out to a location the user chooses.",
+            "homepage": "https://github.com/smronju/nativephp-document-picker",
+            "keywords": [
+                "document-picker",
+                "files",
+                "laravel",
+                "mobile",
+                "nativephp"
+            ],
+            "support": {
+                "issues": "https://github.com/smronju/nativephp-document-picker/issues",
+                "source": "https://github.com/smronju/nativephp-document-picker"
+            },
+            "time": "2026-08-18T07:29:51+00:00"
         },
         {
             "name": "spatie/laravel-package-tools",

@@ -12,6 +12,7 @@ use RuntimeException;
  *   GET  /                → página HTML mínima (subida con progreso)
  *   GET  /hello           → "hola" (prueba de alcance)
  *   GET  /status          → JSON con contadores
+ *   GET  /log             → contenido de server.log en texto plano (diagnóstico remoto)
  *   GET  /download/{name} → sirve un archivo de uploads/ con Content-Length
  *   PUT|POST /upload      → cuerpo crudo o multipart/form-data (primera parte
  *                           con filename) → streaming a disco
@@ -236,6 +237,7 @@ final class LanServer
             $method === 'GET' && $path === '/' => $this->respond($id, 200, self::page(), 'text/html; charset=utf-8'),
             $method === 'GET' && $path === '/hello' => $this->respond($id, 200, "hello\n"),
             $method === 'GET' && $path === '/status' => $this->respond($id, 200, json_encode($this->stats()), 'application/json'),
+            $method === 'GET' && $path === '/log' => $this->respond($id, 200, (string) @file_get_contents($this->dir.'/server.log'), 'text/plain; charset=utf-8'),
             $method === 'GET' && str_starts_with($path, '/download/') => $this->startDownload($id, $path),
             ($method === 'PUT' || $method === 'POST') && $path === '/upload' => $this->startUpload($id, $headers, $params, $bodyPrefix),
             default => $this->respond($id, 404, 'not found'),
